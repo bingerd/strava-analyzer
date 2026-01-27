@@ -9,4 +9,11 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "requests>=2.32.5",
     "uvicorn>=0.40.0",
+    "google-cloud-storage>=3.8.0",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.22",
+    "bcrypt>=4.0.0",
 ]
+
+[project.scripts]
+dev = "uvicorn strava_analyzer.app.main:app --reload --host 0.0.0.0 --port 8080"

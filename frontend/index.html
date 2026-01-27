@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strava Analyzer</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">Strava Analyzer</div>
+        <div class="nav-links">
+            <a href="#overview">Overview</a>
+            <a href="#dashboard">Dashboard</a>
+            <a href="#docs">API Docs</a>
+            <a href="#setup">Setup</a>
+            <span id="authStatus" class="auth-status"></span>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-content">
+            <h1>Strava Analyzer</h1>
+            <p class="hero-subtitle">Automatically capture, store, and visualize your Strava activities</p>
+            <div class="hero-buttons">
+                <a href="#dashboard" class="btn btn-primary">View Dashboard</a>
+                <a href="/docs" class="btn btn-secondary" target="_blank">API Documentation</a>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section id="overview" class="section">
+            <div class="container">
+                <h2>How It Works</h2>
+                <div class="features">
+                    <div class="feature">
+                        <div class="feature-icon">1</div>
+                        <h3>Automatic Capture</h3>
+                        <p>Strava sends a webhook whenever you complete an activity</p>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">2</div>
+                        <h3>Cloud Storage</h3>
+                        <p>Activity data is fetched and stored in Google Cloud Storage as JSON</p>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">3</div>
+                        <h3>Analytics Ready</h3>
+                        <p>Query your data with BigQuery or build custom visualizations</p>
+                    </div>
+                </div>
+
+                <div class="architecture">
+                    <h3>Architecture</h3>
+                    <pre class="arch-diagram">
+┌─────────────┐     webhook      ┌─────────────────┐
+│   Strava    │ ───────────────► │   Cloud Run     │
+│     API     │                  │   (FastAPI)     │
+└─────────────┘                  └────────┬────────┘
+                                          │
+                                          ▼
+                                 ┌─────────────────┐
+                                 │  Cloud Storage  │
+                                 │   (JSON files)  │
+                                 └────────┬────────┘
+                                          │
+                                          ▼
+                                 ┌─────────────────┐
+                                 │    BigQuery     │
+                                 │ (External Table)│
+                                 └─────────────────┘
+                    </pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="dashboard" class="section section-dark">
+            <div class="container">
+                <h2>Activity Dashboard</h2>
+                <p class="section-desc">Login to view your activity data</p>
+
+                <!-- Login Form -->
+                <div id="loginForm" class="login-form">
+                    <div class="login-card">
+                        <h3>Login Required</h3>
+                        <div class="form-group">
+                            <input type="text" id="apiUrl" placeholder="API URL" value="">
+                        </div>
+                        <div class="form-group">
+                            <input type="text" id="username" placeholder="Username" autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="password" placeholder="Password" autocomplete="current-password">
+                        </div>
+                        <button id="loginBtn" class="btn btn-primary btn-full">Login</button>
+                        <div id="loginError" class="login-error hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Dashboard Controls (shown after login) -->
+                <div id="dashboardControls" class="dashboard-controls hidden">
+                    <select id="userSelect" class="user-select" disabled>
+                        <option value="">Select a user...</option>
+                    </select>
+                    <button id="loadUsers" class="btn btn-secondary">Load Users</button>
+                    <button id="loadData" class="btn btn-primary" disabled>Load Activities</button>
+                    <button id="logoutBtn" class="btn btn-outline">Logout</button>
+                </div>
+                <p id="dashboardHint" class="dashboard-hint hidden">Select a user to view their activities. <a href="/auth/authorize" target="_blank">Authorize new user</a></p>
+
+                <div id="dashboardContent" class="dashboard-content hidden">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalActivities">-</div>
+                            <div class="stat-label">Total Activities</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalDistance">-</div>
+                            <div class="stat-label">Total Distance (km)</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalTime">-</div>
+                            <div class="stat-label">Total Time (hours)</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalElevation">-</div>
+                            <div class="stat-label">Total Elevation (m)</div>
+                        </div>
+                    </div>
+
+                    <div class="charts-grid">
+                        <div class="chart-container">
+                            <h3>Distance Over Time</h3>
+                            <canvas id="distanceChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3>Activities by Type</h3>
+                            <canvas id="typeChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3>Weekly Activity</h3>
+                            <canvas id="weeklyChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3>Elevation Profile</h3>
+                            <canvas id="elevationChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="activities-table">
+                        <h3>Recent Activities</h3>
+                        <table id="activitiesTable">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Distance</th>
+                                    <th>Time</th>
+                                    <th>Elevation</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="dashboardError" class="error-message hidden"></div>
+            </div>
+        </section>
+
+        <section id="docs" class="section">
+            <div class="container">
+                <h2>API Documentation</h2>
+
+                <div class="api-docs">
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <code>/health</code>
+                        </div>
+                        <p>Health check endpoint</p>
+                        <pre class="response">{"status": "healthy"}</pre>
+                    </div>
+
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <code>/auth/authorize</code>
+                        </div>
+                        <p>Redirects to Strava OAuth authorization page</p>
+                    </div>
+
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <code>/auth/callback?code={code}</code>
+                        </div>
+                        <p>OAuth callback - exchanges authorization code for tokens</p>
+                        <pre class="response">{"detail": "Authorization successful!", "scope": "activity:read_all"}</pre>
+                    </div>
+
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <code>/auth/users</code>
+                        </div>
+                        <p>List all registered users</p>
+                        <pre class="response">{"users": [{"athlete_id": 123, "athlete_name": "John Doe"}], "count": 1}</pre>
+                    </div>
+
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <code>/activities/?athlete_id={id}</code>
+                        </div>
+                        <p>Fetch all activities for a specific athlete</p>
+                        <pre class="response">[{"id": 123, "name": "Morning Run", "distance": 5000, ...}]</pre>
+                    </div>
+
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <code>/activities/{activity_id}?athlete_id={id}</code>
+                        </div>
+                        <p>Fetch a specific activity for an athlete</p>
+                    </div>
+
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method get">GET</span>
+                            <code>/strava/webhook</code>
+                        </div>
+                        <p>Strava webhook verification endpoint</p>
+                    </div>
+
+                    <div class="endpoint">
+                        <div class="endpoint-header">
+                            <span class="method post">POST</span>
+                            <code>/strava/webhook</code>
+                        </div>
+                        <p>Receives Strava webhook events. Automatically fetches new activity data and stores in GCS.</p>
+                        <pre class="response">{"status": "ok"}</pre>
+                    </div>
+                </div>
+
+                <div class="docs-link">
+                    <p>Interactive API documentation available at:</p>
+                    <a href="/docs" class="btn btn-secondary" target="_blank">OpenAPI Docs (Swagger UI)</a>
+                    <a href="/redoc" class="btn btn-secondary" target="_blank">ReDoc</a>
+                </div>
+            </div>
+        </section>
+
+        <section id="setup" class="section section-dark">
+            <div class="container">
+                <h2>Setup Guide</h2>
+
+                <div class="setup-steps">
+                    <div class="setup-step">
+                        <h3>1. Create Strava API Application</h3>
+                        <ol>
+                            <li>Go to <a href="https://www.strava.com/settings/api" target="_blank">Strava API Settings</a></li>
+                            <li>Create a new application</li>
+                            <li>Set Authorization Callback Domain to <code>strava.bngrd.com</code></li>
+                            <li>Note your Client ID and Client Secret</li>
+                        </ol>
+                    </div>
+
+                    <div class="setup-step">
+                        <h3>2. Configure GCP Project</h3>
+                        <ol>
+                            <li>Create a new GCP project</li>
+                            <li>Enable Cloud Run, Cloud Storage, and Secret Manager APIs</li>
+                            <li>Create a GCS bucket for activity data</li>
+                        </ol>
+                    </div>
+
+                    <div class="setup-step">
+                        <h3>3. Deploy to Cloud Run</h3>
+                        <pre class="code-block">
+# Edit deploy.sh with your configuration
+vim deploy.sh
+
+# Run deployment
+./deploy.sh</pre>
+                    </div>
+
+                    <div class="setup-step">
+                        <h3>4. Configure DNS</h3>
+                        <ol>
+                            <li>Add the CNAME record shown after deployment to Cloudflare</li>
+                            <li>Enable Cloudflare proxy (orange cloud) for SSL</li>
+                        </ol>
+                    </div>
+
+                    <div class="setup-step">
+                        <h3>5. Register Webhook</h3>
+                        <ol>
+                            <li>Go to Strava API settings</li>
+                            <li>Set Webhook Callback URL: <code>https://strava.bngrd.com/strava/webhook</code></li>
+                            <li>Set Verify Token to match your <code>STRAVA_VERIFY_TOKEN</code></li>
+                        </ol>
+                    </div>
+
+                    <div class="setup-step">
+                        <h3>6. Authorize the App</h3>
+                        <ol>
+                            <li>Visit <a href="https://strava.bngrd.com/auth/authorize">https://strava.bngrd.com/auth/authorize</a></li>
+                            <li>Authorize the app to access your Strava data</li>
+                            <li>You're all set! New activities will be automatically captured.</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>Strava Analyzer - Built with FastAPI, Cloud Run, and GCS</p>
+            <p><a href="https://github.com/yourusername/StravaAnalyzer" target="_blank">View on GitHub</a></p>
+        </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
